@@ -41,16 +41,21 @@ type CountItem struct {
 	Value int    `json:"value"`
 }
 
+func (ci *CountItem) increment() CountItem {
+	ci.Value += 1
+	return *ci
+}
+
 type PageStats struct {
 	Uri    string      `json:"uri"`
 	Exists bool        `json:"exists"`
 	Counts []CountItem `json:"counts"`
-	Words  []string    `json:"words"`
+	Words  []CountItem `json:"words"`
 }
 
 func newPageStats(uri string, exists bool) PageStats {
 	var counts []CountItem
-	var words []string
+	var words []CountItem
 	return PageStats{Uri: uri, Exists: exists, Counts: counts, Words: words}
 }
 
@@ -60,8 +65,29 @@ func (ps *PageStats) addCountItem(key string, val int) PageStats {
 	return *ps
 }
 
+func findCountItemIndex(word string, countItems []CountItem) int {
+	for i := 0; i < len(countItems); i++ {
+		if countItems[i].Key == word {
+			return i
+		}
+	}
+	return -1
+}
+
 func (ps *PageStats) setWords(words []string) PageStats {
-	ps.Words = words
+	var wcs []CountItem
+	for i := 0; i < len(words); i++ {
+		word := strings.ToLower(strings.Trim(words[i], ".,;"))
+		if len(word) > 0 {
+			relIndex := findCountItemIndex(word, wcs)
+			if relIndex < 0 {
+				wcs = append(wcs, CountItem{Key: word, Value: 1})
+			} else {
+				wcs[relIndex].increment()
+			}
+		}
+	}
+	ps.Words = wcs
 	return *ps
 }
 
@@ -309,7 +335,8 @@ func discoverLivePage(uri string) PageStats {
 		ps.addCountItem("tableTags", bow.Find("table").Length())
 		body := bow.Find("body")
 		body.Find("img,figure,object,iframe,svg,audio,video,script,style").Remove()
-		ps.addCountItem("words", extractNumWords(body))
+		bodyWords := extractWords(body)
+		ps.addCountItem("words", len(bodyWords))
 		ps.addCountItem("numInnerLinks", body.Find("a").Length())
 		body.Find("a").Remove()
 		ps.addCountItem("wordsNotInLinks", extractNumWords(body))
@@ -330,6 +357,7 @@ func discoverLivePage(uri string) PageStats {
 				ps.addCountItem(cData.ToPath(), cData.WordCount)
 			}
 		}
+		ps.setWords(bodyWords)
 	}
 	return ps
 }
